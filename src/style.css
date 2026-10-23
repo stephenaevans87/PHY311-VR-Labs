@@ -1,14 +1,32 @@
-:root { font-family: system-ui, sans-serif; color: #e7f1f6; background: #101a27; }
+:root { font-family: system-ui, sans-serif; color: #e9f4f5; background: #101a27; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 100vh; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 100vh; }
 #view { min-height: 100vh; touch-action: none; }
 #view canvas { display: block; }
-aside { padding: 26px; background: #192838; border-left: 1px solid #32485a; }
-h1 { font-size: 22px; line-height: 1.25; margin: 0 0 18px; }
-p { line-height: 1.5; }
-.readout { white-space: pre-line; font-family: ui-monospace, monospace; line-height: 1.7; padding: 14px; background: #22394a; border-radius: 9px; }
-.hint { color: #b7cbd5; font-size: 13px; }
+aside { padding: 24px 21px; background: #192b39; border-left: 1px solid #3d6070; overflow-y: auto; max-height: 100vh; }
+aside header { margin-bottom: 18px; }
+.eyebrow { color: #a9e9dd; font-size: 11px; font-weight: 750; letter-spacing: .16em; }
+h1 { font-size: 24px; line-height: 1.15; margin: 8px 0 0; }
+h2 { font-size: 19px; margin: 0 0 8px; }
+p { line-height: 1.47; }
+.station-switch, .mode-switch { display: flex; gap: 5px; padding: 4px; background: #101e2a; border-radius: 10px; }
+.station-switch button, .mode-switch button { flex: 1; font-size: 12px; padding: 9px 5px; background: transparent; border-color: transparent; }
+.station-switch button.selected, .mode-switch button.selected, #predictionControl button.selected { background: #365963; border-color: #7dc5c2; }
+.mode-switch { margin: 18px 0 14px; }
+.role-key { display: flex; justify-content: space-between; gap: 5px; font-size: 12px; font-weight: 700; margin: 0 0 16px; }
+.source { color: #ffc69c; } .origin { color: #d6cbff; } .probe { color: #a1f2df; }
+#lessonPrompt { margin: 0 0 12px; }
+#predictionControl { padding: 10px 12px; background: #233c49; border-radius: 7px; font-size: 12px; line-height: 1.4; }
+#predictionControl div { display: flex; gap: 7px; margin-top: 9px; }
+#predictionControl button { flex: 1; padding: 7px 5px; font-size: 12px; }
+.readout { white-space: pre-line; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.65; padding: 13px; background: #111f2b; border-radius: 8px; margin: 14px 0; }
+.hint { color: #b6cbd3; font-size: 13px; }
+#lessonInsight { margin: 11px 0; }
 a { color: #9adff0; }
 button { border: 1px solid #89c7d2; border-radius: 7px; padding: 9px 12px; background: #29445a; color: #fff; cursor: pointer; }
-@media (max-width: 800px) { main { display: block; } #view { min-height: 58vh; height: 58vh; } aside { padding: 18px; } }
+button:hover { background: #3e6575; }
+button:focus-visible { outline: 3px solid #a9e9dd; outline-offset: 2px; }
+#sandboxGuide { margin-top: 20px; }
+[hidden] { display: none !important; }
+@media (max-width: 800px) { main { display: block; } #view { min-height: 65vh; height: 65vh; } aside { max-height: none; padding: 18px; } }

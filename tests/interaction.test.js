@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createPlayerRig, planarWalkDirection, readThumbstick, turnAroundHead } from '../src/player-rig.js';
-import { pickRayTarget, preservedLocalGrabOffset, worldFromGrabOffset } from '../src/interactions.js';
+import { pickRayTarget, preservedLocalGrabOffset, worldFromGrabOffset, worldToParentPoint } from '../src/interactions.js';
 
 const near = (actual, expected, tolerance = 1e-8) =>
   assert.ok(Math.abs(actual - expected) < tolerance, `${actual} ≠ ${expected}`);
@@ -77,4 +77,17 @@ test('grab offset keeps an object stationary at pickup and follows anchor moveme
   rig.rotation.y = Math.PI / 4;
   const moved = worldFromGrabOffset(anchor, local);
   assert.ok(moved.distanceTo(object.position) > 0.1);
+});
+
+test('desktop drag points convert into a translated station’s local coordinates', () => {
+  const station = new THREE.Group();
+  station.position.set(2.8, 0, -1.55);
+  const origin = new THREE.Group();
+  origin.position.set(0, 1.32, 0);
+  station.add(origin);
+  const hit = origin.getWorldPosition(new THREE.Vector3());
+  const local = worldToParentPoint(origin, hit);
+  near(local.x, 0);
+  near(local.y, 1.32);
+  near(local.z, 0);
 });

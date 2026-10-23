@@ -42,27 +42,30 @@ export function createLab(scene) {
   light.position.set(1, 3, 2);
   scene.add(light);
 
+  const root = new THREE.Group();
+  root.name = 'electrostatics-sandbox';
+  scene.add(root);
   const grid = new THREE.GridHelper(5, 20, 0x466070, 0x263747);
   grid.material.transparent = true;
   grid.material.opacity = 0.35;
-  scene.add(grid);
+  root.add(grid);
 
   const positive = sphere(CHARGE_RADIUS, 0xff9d56);
   const negative = sphere(CHARGE_RADIUS, 0x57b9ff);
   positive.position.set(-0.48, 1.35, -1.55);
   negative.position.set(0.48, 1.35, -1.55);
-  scene.add(positive, negative);
+  root.add(positive, negative);
 
   const probe = sphere(PROBE_RADIUS, 0x79f4ba);
   probe.position.set(0, 1.32, -0.95);
-  scene.add(probe);
+  root.add(probe);
   const probeLabel = makeLabel(620, 185, 0.78);
   probeLabel.position.set(0, 0.21, 0);
   probe.add(probeLabel);
 
   const gaussian = new THREE.Group();
   gaussian.position.copy(positive.position);
-  scene.add(gaussian);
+  root.add(gaussian);
   const shell = new THREE.Mesh(
     new THREE.SphereGeometry(RADIUS, 32, 24),
     new THREE.MeshBasicMaterial({ color: 0x85e5ef, transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false }),
@@ -83,7 +86,7 @@ export function createLab(scene) {
   // The arrow lattice samples the analytical field. It is a visualization,
   // not a numerical flux integration or a claim of constant field magnitude.
   const arrowGroup = new THREE.Group();
-  scene.add(arrowGroup);
+  root.add(arrowGroup);
   const arrows = [];
   for (const y of [0.85, 1.35, 1.85]) {
     for (const z of [-2.15, -1.55, -0.95]) {
@@ -135,7 +138,7 @@ export function createLab(scene) {
 
   update();
   return {
-    positive, negative, probe, gaussian, handle,
+    root, positive, negative, probe, gaussian, handle,
     draggable: [positive, negative, probe, handle],
     update,
     get readout() { return lastReadout; },

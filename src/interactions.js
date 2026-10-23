@@ -50,10 +50,42 @@ export function worldFromGrabOffset(anchor, localOffset) {
   return anchor.localToWorld(localOffset.clone());
 }
 
-export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiButtons, onChange }) {
-  const targets = lab.draggable;
-  const objectFor = (mesh) => mesh === lab.handle ? lab.gaussian : mesh;
+export function worldToParentPoint(object, worldPoint) {
+  return object.parent.worldToLocal(worldPoint.clone());
+}
+
+export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiButtons, onChange, extraInteractables = [] }) {
+  const entries = [
+    ...lab.draggable.map((mesh) => ({
+      mesh,
+      object: mesh === lab.handle ? lab.gaussian : mesh,
+      constrain: clampWorkspace,
+      onMove: onChange,
+    })),
+    ...extraInteractables,
+  ];
+  const entryFor = (mesh) => entries.find((entry) => entry.mesh === mesh);
+  const activeMeshes = () => entries.filter((entry) => {
+    if (entry.enabled?.() === false) return false;
+    for (let node = entry.mesh; node; node = node.parent) if (!node.visible) return false;
+    return true;
+  }).map((entry) => entry.mesh);
+  const activeButtons = () => uiButtons.filter((button) => {
+    for (let node = button; node; node = node.parent) if (!node.visible) return false;
+    return true;
+  });
   let desktopDrag = null;
+  let desktopHovered = null;
+
+  function setDesktopHover(mesh) {
+    if (desktopHovered === mesh) return;
+    if (desktopHovered) entryFor(desktopHovered)?.onHover?.(false);
+    if (desktopHovered?.material?.emissiveIntensity !== undefined) desktopHovered.material.emissiveIntensity = 0.2;
+    desktopHovered = mesh;
+    if (mesh?.material?.emissiveIntensity !== undefined) mesh.material.emissiveIntensity = 0.65;
+    if (mesh) entryFor(mesh)?.onHover?.(true);
+    renderer.domElement.style.cursor = mesh ? 'grab' : '';
+  }
 
   function setPointer(event) {
     const rect = renderer.domElement.getBoundingClientRect();
@@ -67,29 +99,47 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
   renderer.domElement.addEventListener('pointerdown', (event) => {
     if (renderer.xr.isPresenting) return;
     setPointer(event);
-    const hit = raycaster.intersectObjects(targets, false)[0];
+    const hit = raycaster.intersectObjects(activeMeshes(), false)[0];
     if (!hit) return;
-    const object = objectFor(hit.object);
+    const entry = entryFor(hit.object);
+    const object = entry.object;
     camera.getWorldDirection(cameraDirection);
-    dragPlane.setFromNormalAndCoplanarPoint(cameraDirection, object.position);
+    dragPlane.setFromNormalAndCoplanarPoint(cameraDirection, object.getWorldPosition(new THREE.Vector3()));
     if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
-    desktopDrag = { object, offset: object.position.clone().sub(dragPoint) };
+    const localPoint = worldToParentPoint(object, dragPoint);
+    desktopDrag = { entry, object, offset: object.position.clone().sub(localPoint) };
+    entry.onGrab?.();
+    renderer.domElement.style.cursor = 'grabbing';
     orbit.enabled = false;
     renderer.domElement.setPointerCapture(event.pointerId);
     event.preventDefault();
   });
   renderer.domElement.addEventListener('pointermove', (event) => {
-    if (!desktopDrag) return;
+    if (!desktopDrag) {
+      if (!renderer.xr.isPresenting) {
+        setPointer(event);
+        setDesktopHover(raycaster.intersectObjects(activeMeshes(), false)[0]?.object || null);
+      }
+      return;
+    }
     setPointer(event);
     if (raycaster.ray.intersectPlane(dragPlane, dragPoint)) {
-      desktopDrag.object.position.copy(dragPoint).add(desktopDrag.offset);
-      clampWorkspace(desktopDrag.object);
-      onChange();
+      const localPoint = worldToParentPoint(desktopDrag.object, dragPoint);
+      desktopDrag.object.position.copy(localPoint).add(desktopDrag.offset);
+      desktopDrag.entry.constrain?.(desktopDrag.object);
+      desktopDrag.entry.onMove?.();
     }
   });
-  const releaseDesktop = () => { desktopDrag = null; orbit.enabled = !renderer.xr.isPresenting; };
+  const releaseDesktop = () => {
+    const released = desktopDrag;
+    desktopDrag = null;
+    orbit.enabled = !renderer.xr.isPresenting;
+    if (released) released.entry.onRelease?.();
+    setDesktopHover(null);
+  };
   renderer.domElement.addEventListener('pointerup', releaseDesktop);
   renderer.domElement.addEventListener('pointercancel', releaseDesktop);
+  renderer.domElement.addEventListener('pointerleave', () => { if (!desktopDrag) setDesktopHover(null); });
   window.addEventListener('blur', releaseDesktop);
 
   const controllers = [];
@@ -112,37 +162,46 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
     aim.addEventListener('connected', (event) => { state.source = event.data; });
     aim.addEventListener('disconnected', () => {
       state.source = null;
+      state.grabbed?.entry.onCancel?.();
       state.grabbed = null;
       state.beam.visible = false;
     });
     aim.addEventListener('selectstart', () => {
       if (!renderer.xr.isPresenting) return;
-      const near = nearestTarget(grip, targets);
+      const near = nearestTarget(grip, activeMeshes());
       if (near) {
-        const object = objectFor(near);
+        const entry = entryFor(near);
+        const object = entry.object;
         state.grabbed = {
-          object, anchor: grip,
+          entry, object, anchor: grip,
           local: preservedLocalGrabOffset(grip, object), mode: 'near',
         };
+        entry.onGrab?.();
         return;
       }
       aimRay(aim);
-      const button = raycaster.intersectObjects(uiButtons, false)[0];
+      const button = raycaster.intersectObjects(activeButtons(), false)[0];
       if (button && button.distance < 1.6) {
         button.object.userData.action();
         return;
       }
-      const hit = pickRayTarget(raycaster.ray, targets);
+      const hit = pickRayTarget(raycaster.ray, activeMeshes());
       if (hit) {
-        const object = objectFor(hit.mesh);
+        const entry = entryFor(hit.mesh);
+        const object = entry.object;
         if (controllers.some((other) => other.grabbed?.object === object)) return;
         state.grabbed = {
-          object, anchor: aim,
+          entry, object, anchor: aim,
           local: preservedLocalGrabOffset(aim, object), mode: 'far',
         };
+        entry.onGrab?.();
       }
     });
-    aim.addEventListener('selectend', () => { state.grabbed = null; });
+    aim.addEventListener('selectend', () => {
+      const released = state.grabbed;
+      state.grabbed = null;
+      released?.entry.onRelease?.();
+    });
     controllers.push(state);
   }
 
@@ -151,7 +210,7 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
     let best = null;
     let bestDistance = Infinity;
     for (const mesh of meshes) {
-      if (controllers.some((state) => state.grabbed?.object === objectFor(mesh))) continue;
+      if (controllers.some((state) => state.grabbed?.object === entryFor(mesh).object)) continue;
       mesh.getWorldPosition(center);
       const distance = center.distanceTo(gripPosition);
       if (distance < colliderRadius(mesh) + 0.15 && distance < bestDistance) {
@@ -170,11 +229,13 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
 
   function updateHover(state, target) {
     if (state.hovered === target) return;
+    if (state.hovered) entryFor(state.hovered)?.onHover?.(false);
     if (state.hovered?.material?.emissiveIntensity !== undefined) state.hovered.material.emissiveIntensity = 0.2;
     else if (state.hovered?.userData?.action) state.hovered.material.color.setHex(0xffffff);
     state.hovered = target;
     if (target?.material?.emissiveIntensity !== undefined) target.material.emissiveIntensity = 0.7;
     else if (target?.userData?.action) target.material.color.setHex(0xc8f6f0);
+    if (target) entryFor(target)?.onHover?.(true);
   }
 
   let lastTime = null;
@@ -189,7 +250,7 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
       grip.updateMatrixWorld(true);
       aimRay(aim);
       if (grabbed) {
-        updateHover(state, grabbed.object === lab.gaussian ? lab.handle : grabbed.object);
+        updateHover(state, grabbed.entry.mesh);
         if (grabbed.mode === 'far') {
           const depth = readThumbstick(inputForHand(renderer.xr.getSession(), 'right')).y;
           grabbed.local.z = THREE.MathUtils.clamp(grabbed.local.z + depth * dt * 1.1, -MAX_RAY_DISTANCE, -0.35);
@@ -199,14 +260,14 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
         const blend = grabbed.mode === 'near' ? 1 : 1 - Math.exp(-25 * dt);
         const previous = grabbed.object.position.clone();
         grabbed.object.position.lerp(parentTarget, blend);
-        clampWorkspace(grabbed.object);
+        grabbed.entry.constrain?.(grabbed.object);
         beam.visible = grabbed.mode === 'far';
         beam.scale.z = Math.abs(grabbed.local.z);
-        if (grabbed.object.position.distanceToSquared(previous) > 1e-6) onChange();
+        if (grabbed.object.position.distanceToSquared(previous) > 1e-6) grabbed.entry.onMove?.();
       } else {
-        const near = nearestTarget(grip, targets);
-        const button = raycaster.intersectObjects(uiButtons, false)[0];
-        const far = pickRayTarget(raycaster.ray, targets);
+        const near = nearestTarget(grip, activeMeshes());
+        const button = raycaster.intersectObjects(activeButtons(), false)[0];
+        const far = pickRayTarget(raycaster.ray, activeMeshes());
         updateHover(state, near || (button && button.distance < 1.6 ? button.object : far?.mesh));
         beam.visible = true;
         beam.scale.z = button && button.distance < 1.6 ? button.distance : far?.distance || MAX_RAY_DISTANCE;
@@ -216,12 +277,23 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
   }
 
   function cancelGrabs() {
-    for (const state of controllers) state.grabbed = null;
+    if (desktopDrag) {
+      desktopDrag.entry.onCancel?.();
+      desktopDrag = null;
+      orbit.enabled = !renderer.xr.isPresenting;
+    }
+    setDesktopHover(null);
+    for (const state of controllers) {
+      state.grabbed?.entry.onCancel?.();
+      state.grabbed = null;
+      updateHover(state, null);
+    }
   }
 
   function sessionEnd() {
     lastTime = null;
     for (const state of controllers) {
+      state.grabbed?.entry.onCancel?.();
       state.grabbed = null;
       state.source = null;
       state.beam.visible = false;
