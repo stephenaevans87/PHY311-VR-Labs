@@ -1,0 +1,13 @@
+:root { font-family: system-ui, sans-serif; color: #e7f1f6; background: #101a27; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 100vh; }
+#view { min-height: 100vh; touch-action: none; }
+#view canvas { display: block; }
+aside { padding: 26px; background: #192838; border-left: 1px solid #32485a; }
+h1 { font-size: 22px; line-height: 1.25; margin: 0 0 18px; }
+p { line-height: 1.5; }
+.readout { white-space: pre-line; font-family: ui-monospace, monospace; line-height: 1.7; padding: 14px; background: #22394a; border-radius: 9px; }
+.hint { color: #b7cbd5; font-size: 13px; }
+a { color: #9adff0; }
+@media (max-width: 800px) { main { display: block; } #view { min-height: 58vh; height: 58vh; } aside { padding: 18px; } }
