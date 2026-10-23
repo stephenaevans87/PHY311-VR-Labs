@@ -10,4 +10,5 @@ p { line-height: 1.5; }
 .readout { white-space: pre-line; font-family: ui-monospace, monospace; line-height: 1.7; padding: 14px; background: #22394a; border-radius: 9px; }
 .hint { color: #b7cbd5; font-size: 13px; }
 a { color: #9adff0; }
+button { border: 1px solid #89c7d2; border-radius: 7px; padding: 9px 12px; background: #29445a; color: #fff; cursor: pointer; }
 @media (max-width: 800px) { main { display: block; } #view { min-height: 58vh; height: 58vh; } aside { padding: 18px; } }

@@ -3,6 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { createLab } from './scene.js';
 import { setupInteractions } from './interactions.js';
+import { createPlayerRig } from './player-rig.js';
+import { createVrControls } from './vr-controls.js';
 import './style.css';
 
 const root = document.getElementById('app');
@@ -13,7 +15,8 @@ root.innerHTML = `
       <h1>PHY 311 · Electrostatics</h1>
       <p>Move the orange +1 nC and blue −1 nC charges. Place the green probe to measure electric potential and field magnitude. Move the cyan handle to reposition the Gaussian surface.</p>
       <div class="readout" id="readout" aria-live="polite"></div>
-      <p class="hint">Desktop: drag objects with the mouse; drag the background to orbit, scroll to zoom. In VR: reach to an object and hold a trigger to grab it. Point a controller at <strong>Exit VR</strong> and press the trigger to leave.</p>
+      <p class="hint">Desktop: drag objects with the mouse; drag the background to orbit, scroll to zoom. In VR: left stick moves, right stick snaps 30° turns. Reach or point at an object, then hold a trigger to grab. Push the right stick forward/back while distance grabbing to change depth. Use the small side controls to recenter, reset the lab, or exit VR.</p>
+      <button id="resetLab" type="button">Reset lab objects</button>
       <p class="hint">Meters and SI units. Probe values use Coulomb’s law and superposition. Enclosed charge and flux use Gauss’s law. Arrows sample field direction and use a compressed length scale; they are not a flux calculation.</p>
       <p class="hint" id="status"></p>
       <a href="./PHY311_Dipole_VR_Pilot_v3_2.html">Legacy dipole lesson</a>
@@ -32,6 +35,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
 view.appendChild(renderer.domElement);
+const player = createPlayerRig({ scene, camera, renderer });
 
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.target.set(0, 1.35, -1.5);
@@ -41,29 +45,8 @@ orbit.maxDistance = 8;
 orbit.update();
 
 const lab = createLab(scene);
-
-const exitCanvas = document.createElement('canvas');
-exitCanvas.width = 512;
-exitCanvas.height = 160;
-const ctx = exitCanvas.getContext('2d');
-ctx.fillStyle = '#25364b';
-ctx.fillRect(0, 0, 512, 160);
-ctx.strokeStyle = '#a8d9e0';
-ctx.lineWidth = 8;
-ctx.strokeRect(4, 4, 504, 152);
-ctx.fillStyle = '#ffffff';
-ctx.font = 'bold 65px system-ui';
-ctx.textAlign = 'center';
-ctx.fillText('Exit VR', 256, 105);
-const exitTexture = new THREE.CanvasTexture(exitCanvas);
-exitTexture.colorSpace = THREE.SRGBColorSpace;
-const exitButton = new THREE.Mesh(
-  new THREE.PlaneGeometry(0.48, 0.15),
-  new THREE.MeshBasicMaterial({ map: exitTexture, side: THREE.DoubleSide }),
-);
-exitButton.position.set(1.12, 1.65, -1.15);
-exitButton.visible = false;
-scene.add(exitButton);
+const initialPositions = [lab.positive, lab.negative, lab.probe, lab.gaussian]
+  .map((object) => [object, object.position.clone()]);
 
 function refresh() {
   const { measurement, gauss } = lab.update();
@@ -76,15 +59,36 @@ function refresh() {
 }
 refresh();
 
-const updateInteractions = setupInteractions({ renderer, camera, scene, orbit, lab, exitButton, onChange: refresh });
+let interactions;
+function resetLab() {
+  interactions?.cancelGrabs();
+  for (const [object, position] of initialPositions) object.position.copy(position);
+  refresh();
+}
+document.getElementById('resetLab').addEventListener('click', resetLab);
+const vrControls = createVrControls(camera, {
+  recenter: () => { interactions?.cancelGrabs(); player.recenter(); },
+  resetLab,
+  exit: () => renderer.xr.getSession()?.end(),
+});
+interactions = setupInteractions({
+  renderer, camera, playerRig: player.rig, orbit, lab,
+  uiButtons: vrControls.buttons, onChange: refresh,
+});
 renderer.xr.addEventListener('sessionstart', () => {
+  player.sessionStart();
   orbit.enabled = false;
-  exitButton.visible = true;
+  vrControls.setVisible(true);
   status.textContent = 'VR session active';
 });
 renderer.xr.addEventListener('sessionend', () => {
+  interactions.sessionEnd();
+  player.sessionEnd();
+  vrControls.setVisible(false);
+  camera.position.set(0, 1.65, 1.1);
+  orbit.target.set(0, 1.35, -1.5);
   orbit.enabled = true;
-  exitButton.visible = false;
+  orbit.update();
   status.textContent = '';
 });
 
@@ -101,9 +105,10 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
-renderer.setAnimationLoop(() => {
-  if (!renderer.xr.isPresenting) orbit.update();
-  updateInteractions();
-  lab.faceLabels(renderer.xr.isPresenting ? renderer.xr.getCamera() : camera);
+renderer.setAnimationLoop((time) => {
+  if (renderer.xr.isPresenting) player.update(time);
+  else orbit.update();
+  interactions.update(time);
+  lab.faceLabels(camera);
   renderer.render(scene, camera);
 });

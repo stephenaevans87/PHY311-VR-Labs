@@ -101,6 +101,7 @@ export function createLab(scene) {
   ];
 
   let lastReadout = {};
+  const labelQuaternion = new THREE.Quaternion();
   function update() {
     const sources = charges();
     const nearest = Math.min(...sources.map(({ position }) => position.distanceTo(probe.position)));
@@ -139,8 +140,9 @@ export function createLab(scene) {
     update,
     get readout() { return lastReadout; },
     faceLabels(camera) {
-      probeLabel.quaternion.copy(camera.quaternion);
-      gaussianLabel.quaternion.copy(camera.quaternion);
+      camera.getWorldQuaternion(labelQuaternion);
+      probeLabel.quaternion.copy(labelQuaternion);
+      gaussianLabel.quaternion.copy(labelQuaternion);
     },
   };
 }
