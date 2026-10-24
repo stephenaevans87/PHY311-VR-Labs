@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { NANOCOULOMB } from '../physics.js';
+import { K, NANOCOULOMB } from '../physics.js';
 import { pointChargeExpansion } from './origin-physics.js';
 
 // The lesson's polar z axis is world y. O stays on the source axis so the
@@ -7,6 +7,8 @@ import { pointChargeExpansion } from './origin-physics.js';
 const SOURCE = new THREE.Vector3(0, 1.43, 0);
 const ORIGIN_START = new THREE.Vector3(0, 1.05, 0);
 const PROBE_START = new THREE.Vector3(0.72, 1.48, 0.12);
+const WAND_TIP_OFFSET = new THREE.Vector3(0.42, 0, 0);
+const EQUIPOTENTIAL_RADII = [0.9, 1.6, 2.3];
 const COLORS = { source: 0xffa660, origin: 0xbda8ff, probe: 0x79efd5 };
 
 function solid(color, glow = 0.18) {
@@ -67,6 +69,53 @@ function convergenceSphere() {
     new THREE.MeshBasicMaterial({ color: COLORS.origin, transparent: true, opacity: 0.035, side: THREE.DoubleSide, depthWrite: false })));
   return group;
 }
+function equipotentialPatch(radius) {
+  // Every vertex lies on the sphere |x - source| = radius. The open rear-side
+  // cutaway leaves the apparatus and the student's hands visible from entry.
+  const patch = new THREE.Group();
+  const phiStart = 3.48;
+  const phiLength = 1.8;
+  const thetaStart = 0.54;
+  const thetaLength = 2.05;
+  const surface = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 32, 16, phiStart, phiLength, thetaStart, thetaLength),
+    new THREE.MeshBasicMaterial({
+      color: COLORS.source, transparent: true, opacity: 0.085,
+      side: THREE.DoubleSide, depthWrite: false,
+    }),
+  );
+  surface.userData.kind = 'physical-equipotential';
+  patch.add(surface);
+  const edgePoints = [];
+  const point = (phi, theta) => new THREE.Vector3(
+    -radius * Math.cos(phi) * Math.sin(theta),
+    radius * Math.cos(theta),
+    radius * Math.sin(phi) * Math.sin(theta),
+  );
+  for (let i = 0; i <= 32; i++) edgePoints.push(point(phiStart + phiLength * i / 32, thetaStart));
+  for (let i = 1; i <= 16; i++) edgePoints.push(point(phiStart + phiLength, thetaStart + thetaLength * i / 16));
+  for (let i = 31; i >= 0; i--) edgePoints.push(point(phiStart + phiLength * i / 32, thetaStart + thetaLength));
+  for (let i = 15; i > 0; i--) edgePoints.push(point(phiStart, thetaStart + thetaLength * i / 16));
+  const edge = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(edgePoints),
+    new THREE.LineBasicMaterial({ color: 0xffbd83, transparent: true, opacity: 0.42, depthWrite: false }));
+  patch.add(edge);
+  for (const theta of [1.03, 2.08]) {
+    const latitude = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(Array.from({ length: 33 }, (_, i) =>
+        point(phiStart + phiLength * i / 32, theta))),
+      new THREE.LineBasicMaterial({ color: 0xffcba0, transparent: true, opacity: 0.23, depthWrite: false }),
+    );
+    patch.add(latitude);
+  }
+  const valueLabel = plate(0.48, 0.13, '#ffc99f');
+  valueLabel.position.copy(point(phiStart + 0.12, thetaStart + 0.35));
+  valueLabel.position.y += 0.08;
+  valueLabel.userData.draw([`R ${radius.toFixed(1)} m`, `V ${(K * NANOCOULOMB / radius).toFixed(2)} V`]);
+  valueLabel.visible = false;
+  patch.add(valueLabel);
+  patch.userData = { kind: 'physical-equipotential', radius, potential: K * NANOCOULOMB / radius, surface, valueLabel };
+  return patch;
+}
 function drawTerms(mesh, result) {
   const ctx = mesh.userData.canvas.getContext('2d');
   const canvas = mesh.userData.canvas;
@@ -124,6 +173,8 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
   const charge = ball(0.14, COLORS.source);
   charge.position.copy(SOURCE);
   root.add(charge);
+  const equipotentials = EQUIPOTENTIAL_RADII.map(equipotentialPatch);
+  equipotentials.forEach((patch) => { patch.position.copy(SOURCE); root.add(patch); });
   const plus = new THREE.Group();
   for (const [w, h] of [[0.083, 0.017], [0.017, 0.083]]) {
     plus.add(new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.007),
@@ -142,20 +193,40 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
   const originDepthRing = ring(0.17, COLORS.origin, 0.008);
   originDepthRing.rotation.y = Math.PI / 2;
   origin.add(originDepthRing);
-  const originHandle = ball(0.10, COLORS.origin);
-  originHandle.position.set(-0.27, 0, 0.02);
+  const originHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.19, 16), solid(COLORS.origin));
+  originHandle.rotation.z = Math.PI / 2;
+  originHandle.position.set(-0.29, 0, 0.02);
   origin.add(originHandle);
   const handleStem = line(COLORS.origin, 0.85);
-  setLine(handleStem, new THREE.Vector3(-0.27, 0, 0.02), new THREE.Vector3());
+  setLine(handleStem, new THREE.Vector3(-0.29, 0, 0.02), new THREE.Vector3());
   origin.add(handleStem);
 
-  const probe = new THREE.Mesh(new THREE.OctahedronGeometry(0.155), solid(COLORS.probe));
-  probe.position.copy(PROBE_START);
+  const probe = new THREE.Group();
+  probe.position.copy(PROBE_START).sub(WAND_TIP_OFFSET);
   root.add(probe);
-  const probeHalo = ring(0.19, COLORS.probe, 0.009);
-  probe.add(probeHalo);
+  const probeHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.047, 0.047, 0.22, 16), solid(0x315d60));
+  probeHandle.rotation.z = Math.PI / 2;
+  probe.add(probeHandle);
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.045, 16), solid(COLORS.probe));
+  collar.rotation.z = Math.PI / 2;
+  collar.position.x = 0.12;
+  probe.add(collar);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.025, 0.27, 12), solid(0x9fc6c3, 0.08));
+  shaft.rotation.z = Math.PI / 2;
+  shaft.position.x = 0.26;
+  probe.add(shaft);
+  const probeTip = ball(0.035, COLORS.probe);
+  probeTip.position.copy(WAND_TIP_OFFSET);
+  probe.add(probeTip);
+  const tipHalo = ring(0.06, COLORS.probe, 0.006);
+  tipHalo.position.copy(WAND_TIP_OFFSET);
+  probe.add(tipHalo);
+  const handleMeter = plate(0.34, 0.10, '#a0f3df');
+  handleMeter.position.set(-0.01, 0.062, 0.015);
+  probe.add(handleMeter);
 
   const boundary = convergenceSphere();
+  boundary.userData.kind = 'mathematical-convergence-boundary';
   root.add(boundary);
   const sourceVector = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), ORIGIN_START, 0.38, COLORS.source, 0.07, 0.035);
   const observationVector = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), ORIGIN_START, 0.8, COLORS.probe, 0.08, 0.04);
@@ -166,8 +237,24 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
   const observationVectorLabel = plate(0.75, 0.12, '#a0f3df');
   observationVectorLabel.position.set(0.58, 0.83, 0.63);
   root.add(observationVectorLabel);
+  const physicalDistanceLine = line(COLORS.probe, 0.62);
+  physicalDistanceLine.userData.kind = 'physical-source-to-tip-distance';
+  root.add(physicalDistanceLine);
+  const physicalDistanceLabel = plate(0.55, 0.11, '#a0f3df');
+  root.add(physicalDistanceLabel);
+  const savedMarkers = Array.from({ length: 3 }, (_, index) => {
+    const marker = ball(0.045, COLORS.probe);
+    const label = plate(0.45, 0.13, '#a0f3df');
+    label.position.set(-0.33, 0.10, 0);
+    marker.add(label);
+    marker.userData.label = label;
+    marker.userData.index = index;
+    marker.visible = false;
+    root.add(marker);
+    return marker;
+  });
 
-  const exactMeter = plate(1.00, 0.27, '#a0f3df');
+  const exactMeter = plate(0.70, 0.19, '#a0f3df');
   exactMeter.position.set(1.44, 1.62, 0.30);
   root.add(exactMeter);
   const termMeter = plate(1.05, 0.53, '#a0f3df');
@@ -197,7 +284,10 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
   let prediction = null;
   let lastAction = 'initial';
   let lastResult;
+  let instructionalPresentation = null;
+  let presentationKey = '';
   const quat = new THREE.Quaternion();
+  const probeQuat = new THREE.Quaternion();
 
   function setGrab(mesh, active) {
     mesh.scale.setScalar(active ? 1.13 : 1);
@@ -216,19 +306,58 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
     cue.userData.draw(lines);
     sameButton.visible = mode === 'guided';
     changesButton.visible = mode === 'guided';
-    hud.visible = xrVisible && mode === 'guided';
+    hud.visible = xrVisible && mode === 'guided' && !instructionalPresentation;
   }
   function update() {
+    root.updateMatrixWorld(true);
+    const tipPosition = root.worldToLocal(probeTip.getWorldPosition(new THREE.Vector3()));
     const result = pointChargeExpansion({
-      charge: NANOCOULOMB, source: charge.position, origin: origin.position, observation: probe.position,
+      charge: NANOCOULOMB, source: charge.position, origin: origin.position, observation: tipPosition,
     });
     lastResult = result;
+    if (instructionalPresentation) {
+      equipotentials.forEach((patch, index) => {
+        const radius = instructionalPresentation.shellRadii?.[index] ?? EQUIPOTENTIAL_RADII[index];
+        patch.scale.setScalar(radius / EQUIPOTENTIAL_RADII[index]);
+        patch.userData.radius = radius;
+        patch.userData.potential = K * NANOCOULOMB / radius;
+        patch.userData.valueLabel.userData.draw([
+          `R ${radius.toFixed(2)} m`, `V ${patch.userData.potential.toFixed(2)} V`,
+        ]);
+        patch.visible = Boolean(instructionalPresentation.shells?.[index]);
+      });
+      savedMarkers.forEach((marker, index) => {
+        const sample = instructionalPresentation.samples?.[index];
+        marker.visible = Boolean(sample);
+        if (sample) {
+          marker.position.set(sample.position.x, sample.position.y, sample.position.z);
+          marker.userData.label.userData.draw([
+            `PIN ${index + 1}`,
+            `${sample.distance.toFixed(2)} m · ${sample.potential.toFixed(2)} V`,
+          ]);
+        }
+      });
+    }
+    const visibleShells = equipotentials.filter((patch) => patch.visible);
+    const activeShell = visibleShells.reduce((closest, patch) =>
+      !closest || Math.abs(patch.userData.radius - result.physicalDistance)
+        < Math.abs(closest.userData.radius - result.physicalDistance) ? patch : closest, null);
+    equipotentials.forEach((patch) => {
+      const active = Boolean(instructionalPresentation) && patch === activeShell;
+      patch.userData.surface.material.opacity = active ? 0.17 : instructionalPresentation ? 0.065 : 0.085;
+      patch.userData.valueLabel.visible = active && patch.visible;
+      patch.children.slice(1, -1).forEach((child, index) => {
+        if (child.material) child.material.opacity = active ? 0.65 : index === 0 && !instructionalPresentation ? 0.42 : 0.23;
+      });
+    });
     boundary.position.copy(origin.position);
     boundary.scale.setScalar(Math.max(result.sourceRadius, 0.001));
-    boundary.visible = result.sourceRadius > 0.025;
+    boundary.visible = result.sourceRadius > 0.025
+      && (!instructionalPresentation || instructionalPresentation.boundary);
     const toSource = charge.position.clone().sub(origin.position);
-    const toProbe = probe.position.clone().sub(origin.position);
-    const showVectors = selected !== null;
+    const toProbe = tipPosition.clone().sub(origin.position);
+    const showVectors = selected !== null
+      && (!instructionalPresentation || instructionalPresentation.vectors);
     sourceVector.visible = showVectors && toSource.length() > 0.02;
     observationVector.visible = showVectors && toProbe.length() > 0.02;
     if (sourceVector.visible) {
@@ -243,12 +372,22 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
     }
     sourceVectorLabel.visible = showVectors;
     observationVectorLabel.visible = showVectors;
+    physicalDistanceLine.visible = Boolean(instructionalPresentation?.distance);
+    physicalDistanceLabel.visible = physicalDistanceLine.visible;
+    if (physicalDistanceLine.visible) {
+      setLine(physicalDistanceLine, charge.position, tipPosition);
+      physicalDistanceLabel.position.copy(charge.position).add(tipPosition).multiplyScalar(0.5);
+      physicalDistanceLabel.position.y += 0.14;
+      physicalDistanceLabel.userData.draw(['distance ' + result.physicalDistance.toFixed(2) + ' m']);
+    }
     sourceVectorLabel.userData.draw([`r′  O → +q    ${result.sourceRadius.toFixed(2)} m`], '#ffc99f');
     observationVectorLabel.userData.draw([`r  O → probe    ${result.r.toFixed(2)} m`], '#a0f3df');
     const exact = result.exactPotential === null ? 'undefined at charge' : `${result.exactPotential.toFixed(2)} V`;
+    exactMeter.position.copy(tipPosition).add(new THREE.Vector3(0.20, 0.19, 0.08));
     exactMeter.userData.draw(['EXACT POTENTIAL', exact], '#a0f3df');
-    termMeter.visible = mathRevealed;
-    if (mathRevealed) {
+    handleMeter.userData.draw(['EXACT', exact], '#a0f3df');
+    termMeter.visible = mathRevealed && (!instructionalPresentation || instructionalPresentation.terms);
+    if (termMeter.visible) {
       if (selected === 'origin') {
         termMeter.userData.draw(['Qn = q(z′)ⁿ',
           'Q0 = 1 nC',
@@ -257,7 +396,10 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
       } else drawTerms(termMeter, result);
     }
     refreshCue(result);
-    onStateChange({ mode, selected, mathRevealed, prediction, lastAction, result });
+    onStateChange({
+      mode, selected, mathRevealed, prediction, lastAction, result,
+      tipPosition: tipPosition.clone(), sourcePosition: charge.position.clone(),
+    });
     return result;
   }
   function select(role) {
@@ -278,12 +420,14 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
   function reset() {
     origin.position.copy(ORIGIN_START);
     probe.position.copy(PROBE_START);
+    probe.position.sub(WAND_TIP_OFFSET);
+    probe.quaternion.identity();
     selected = null;
     mathRevealed = false;
     prediction = null;
     lastAction = 'initial';
     for (const mesh of [originHandle, originCore, originFaceRing, originDepthRing]) setGrab(mesh, false);
-    setGrab(probe, false);
+    setGrab(probeHandle, false);
     update();
   }
   const originInteraction = (mesh) => ({
@@ -302,17 +446,17 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
   const interactables = [
     originInteraction(originHandle),
     {
-      mesh: probe, object: probe,
+      mesh: probeHandle, object: probe, rotateWithController: true,
       constrain: () => {
-        probe.position.x = THREE.MathUtils.clamp(probe.position.x, -0.92, 0.92);
-        probe.position.y = THREE.MathUtils.clamp(probe.position.y, 0.82, 1.95);
-        probe.position.z = THREE.MathUtils.clamp(probe.position.z, -0.48, 0.48);
+        probe.position.x = THREE.MathUtils.clamp(probe.position.x, -2.2, 2.2);
+        probe.position.y = THREE.MathUtils.clamp(probe.position.y, 0.35, 2.4);
+        probe.position.z = THREE.MathUtils.clamp(probe.position.z, -2.0, 1.1);
       },
       onHover: (hovered) => hovered ? select('probe') : clearSelection('probe'),
-      onGrab: () => { setGrab(probe, true); select('probe'); },
+      onGrab: () => { setGrab(probeHandle, true); select('probe'); },
       onMove: () => { lastAction = 'probe'; mathRevealed = true; update(); },
-      onRelease: () => { setGrab(probe, false); clearSelection('probe'); },
-      onCancel: () => { setGrab(probe, false); clearSelection('probe'); },
+      onRelease: () => { setGrab(probeHandle, false); clearSelection('probe'); },
+      onCancel: () => { setGrab(probeHandle, false); clearSelection('probe'); },
     },
     originInteraction(originCore),
     originInteraction(originFaceRing),
@@ -320,9 +464,18 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
   ];
   reset();
   return {
-    root, charge, origin, probe, boundary, sourceVector, observationVector,
+    root, charge, origin, probe, probeHandle, probeTip, equipotentials, boundary,
+    sourceVector, observationVector, physicalDistanceLine, savedMarkers,
     interactables, buttons: [sameButton, changesButton], update, reset, recordPrediction,
     attachHud(camera) { camera.add(hud); },
+    setPresentation(value) {
+      const key = JSON.stringify(value);
+      if (key === presentationKey) return;
+      instructionalPresentation = value;
+      presentationKey = key;
+      update();
+    },
+    get presentation() { return instructionalPresentation; },
     setVrVisible(value) { xrVisible = value; update(); },
     setMode(value) { mode = value === 'free' ? 'free' : 'guided'; update(); },
     get mode() { return mode; },
@@ -330,8 +483,12 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
     get mathRevealed() { return mathRevealed; },
     faceLabels(camera) {
       camera.getWorldQuaternion(quat);
-      [plus, exactMeter, termMeter, sourceVectorLabel, observationVectorLabel]
+      [plus, exactMeter, termMeter, physicalDistanceLabel, sourceVectorLabel, observationVectorLabel,
+        ...savedMarkers.map((marker) => marker.userData.label),
+        ...equipotentials.map((patch) => patch.userData.valueLabel)]
         .forEach((mesh) => mesh.quaternion.copy(quat));
+      probe.getWorldQuaternion(probeQuat).invert().multiply(quat);
+      handleMeter.quaternion.copy(probeQuat);
     },
   };
 }

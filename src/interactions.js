@@ -11,6 +11,8 @@ const center = new THREE.Vector3();
 const worldScale = new THREE.Vector3();
 const closestPoint = new THREE.Vector3();
 const gripPosition = new THREE.Vector3();
+const anchorQuaternion = new THREE.Quaternion();
+const parentQuaternion = new THREE.Quaternion();
 
 function colliderRadius(mesh) {
   mesh.getWorldScale(worldScale);
@@ -52,6 +54,21 @@ export function worldFromGrabOffset(anchor, localOffset) {
 
 export function worldToParentPoint(object, worldPoint) {
   return object.parent.worldToLocal(worldPoint.clone());
+}
+
+export function preservedGrabRotation(anchor, object) {
+  anchor.updateMatrixWorld(true);
+  object.updateWorldMatrix(true, false);
+  return anchor.getWorldQuaternion(new THREE.Quaternion()).invert()
+    .multiply(object.getWorldQuaternion(new THREE.Quaternion()));
+}
+
+export function localRotationFromGrab(anchor, object, relativeRotation) {
+  anchor.updateMatrixWorld(true);
+  object.parent.updateWorldMatrix(true, false);
+  anchor.getWorldQuaternion(anchorQuaternion);
+  object.parent.getWorldQuaternion(parentQuaternion);
+  return parentQuaternion.invert().multiply(anchorQuaternion).multiply(relativeRotation);
 }
 
 export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiButtons, onChange, extraInteractables = [] }) {
@@ -175,6 +192,7 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
         state.grabbed = {
           entry, object, anchor: grip,
           local: preservedLocalGrabOffset(grip, object), mode: 'near',
+          rotation: entry.rotateWithController ? preservedGrabRotation(grip, object) : null,
         };
         entry.onGrab?.();
         return;
@@ -193,6 +211,7 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
         state.grabbed = {
           entry, object, anchor: aim,
           local: preservedLocalGrabOffset(aim, object), mode: 'far',
+          rotation: entry.rotateWithController ? preservedGrabRotation(aim, object) : null,
         };
         entry.onGrab?.();
       }
@@ -259,11 +278,16 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
         const parentTarget = grabbed.object.parent.worldToLocal(worldTarget);
         const blend = grabbed.mode === 'near' ? 1 : 1 - Math.exp(-25 * dt);
         const previous = grabbed.object.position.clone();
+        const previousRotation = grabbed.object.quaternion.clone();
         grabbed.object.position.lerp(parentTarget, blend);
+        if (grabbed.rotation) grabbed.object.quaternion.copy(
+          localRotationFromGrab(grabbed.anchor, grabbed.object, grabbed.rotation),
+        );
         grabbed.entry.constrain?.(grabbed.object);
         beam.visible = grabbed.mode === 'far';
         beam.scale.z = Math.abs(grabbed.local.z);
-        if (grabbed.object.position.distanceToSquared(previous) > 1e-6) grabbed.entry.onMove?.();
+        if (grabbed.object.position.distanceToSquared(previous) > 1e-6
+          || grabbed.object.quaternion.angleTo(previousRotation) > 1e-4) grabbed.entry.onMove?.();
       } else {
         const near = nearestTarget(grip, activeMeshes());
         const button = raycaster.intersectObjects(activeButtons(), false)[0];

@@ -18,8 +18,20 @@ p { line-height: 1.47; }
 .source { color: #ffc69c; } .origin { color: #d6cbff; } .probe { color: #a1f2df; }
 #lessonPrompt { margin: 0 0 12px; }
 #predictionControl { padding: 10px 12px; background: #233c49; border-radius: 7px; font-size: 12px; line-height: 1.4; }
-#predictionControl div { display: flex; gap: 7px; margin-top: 9px; }
-#predictionControl button { flex: 1; padding: 7px 5px; font-size: 12px; }
+#predictionControl div { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+#predictionControl button { flex: 1; min-width: 74px; padding: 7px 5px; font-size: 12px; }
+#lessonPhase { margin: 12px 0 5px; }
+#lessonTitle { margin: 0 0 8px; }
+#lessonFeedback:empty, #lessonSamples:empty { display: none; }
+#pinReading { margin-top: 9px; }
+.lesson-actions, #shellControls { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 8px; }
+.lesson-actions button { flex: 1; min-width: 76px; padding: 8px 5px; }
+#shellControls button { flex: 1; min-width: 90px; font-size: 12px; padding: 8px 4px; }
+#freeControls p { margin-bottom: 4px; }
+.lesson-explanation { border-left: 3px solid #9debd9; padding: 5px 0 5px 12px; margin: 12px 0; background: #203946; }
+.lesson-explanation p { margin: 6px 4px; }
+.equation { font-size: 17px; font-weight: 700; letter-spacing: .01em; }
+button:disabled { opacity: .5; cursor: default; }
 .readout { white-space: pre-line; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.65; padding: 13px; background: #111f2b; border-radius: 8px; margin: 14px 0; }
 .hint { color: #b6cbd3; font-size: 13px; }
 #lessonInsight { margin: 11px 0; }

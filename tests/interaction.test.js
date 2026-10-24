@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createPlayerRig, planarWalkDirection, readThumbstick, turnAroundHead } from '../src/player-rig.js';
-import { pickRayTarget, preservedLocalGrabOffset, worldFromGrabOffset, worldToParentPoint } from '../src/interactions.js';
+import { pickRayTarget, preservedLocalGrabOffset, worldFromGrabOffset, worldToParentPoint, preservedGrabRotation, localRotationFromGrab } from '../src/interactions.js';
 
 const near = (actual, expected, tolerance = 1e-8) =>
   assert.ok(Math.abs(actual - expected) < tolerance, `${actual} ≠ ${expected}`);
@@ -90,4 +90,26 @@ test('desktop drag points convert into a translated station’s local coordinate
   near(local.x, 0);
   near(local.y, 1.32);
   near(local.z, 0);
+});
+
+test('an opted-in wand follows controller rotation without jumping at pickup', () => {
+  const parent = new THREE.Group();
+  parent.rotation.y = 0.3;
+  const anchor = new THREE.Group();
+  const wand = new THREE.Group();
+  const tip = new THREE.Object3D();
+  tip.position.x = 0.42;
+  parent.add(wand);
+  wand.add(tip);
+  const scene = new THREE.Scene();
+  scene.add(parent, anchor);
+  wand.position.set(0.3, 1.4, -1.2);
+  anchor.position.set(0.3, 1.4, -1);
+  const relative = preservedGrabRotation(anchor, wand);
+  const before = tip.getWorldPosition(new THREE.Vector3());
+  wand.quaternion.copy(localRotationFromGrab(anchor, wand, relative));
+  near(tip.getWorldPosition(new THREE.Vector3()).distanceTo(before), 0);
+  anchor.rotation.z = Math.PI / 2;
+  wand.quaternion.copy(localRotationFromGrab(anchor, wand, relative));
+  assert.ok(tip.getWorldPosition(new THREE.Vector3()).distanceTo(before) > 0.2);
 });
