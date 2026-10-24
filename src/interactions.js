@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { inputForHand, readThumbstick } from './player-rig.js';
 
 const MAX_RAY_DISTANCE = 4.5;
+const MAX_UI_DISTANCE = 4.5;
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const dragPlane = new THREE.Plane();
@@ -199,7 +200,7 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
       }
       aimRay(aim);
       const button = raycaster.intersectObjects(activeButtons(), false)[0];
-      if (button && button.distance < 1.6) {
+      if (button && button.distance < MAX_UI_DISTANCE) {
         button.object.userData.action();
         return;
       }
@@ -292,9 +293,9 @@ export function setupInteractions({ renderer, camera, playerRig, orbit, lab, uiB
         const near = nearestTarget(grip, activeMeshes());
         const button = raycaster.intersectObjects(activeButtons(), false)[0];
         const far = pickRayTarget(raycaster.ray, activeMeshes());
-        updateHover(state, near || (button && button.distance < 1.6 ? button.object : far?.mesh));
+        updateHover(state, near || (button && button.distance < MAX_UI_DISTANCE ? button.object : far?.mesh));
         beam.visible = true;
-        beam.scale.z = button && button.distance < 1.6 ? button.distance : far?.distance || MAX_RAY_DISTANCE;
+        beam.scale.z = button && button.distance < MAX_UI_DISTANCE ? button.distance : far?.distance || MAX_RAY_DISTANCE;
         beam.material.opacity = near ? 0.15 : far || button ? 0.75 : 0.25;
       }
     }

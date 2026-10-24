@@ -1,5 +1,12 @@
 import * as THREE from 'three';
 
+export const GUIDE_HOME = Object.freeze({ x: 1.42, y: 1.62, z: -1.08, yaw: -Math.atan2(1.42, 1.08) });
+
+export function resetGuidePose(panel) {
+  panel.position.set(GUIDE_HOME.x, GUIDE_HOME.y, GUIDE_HOME.z);
+  panel.rotation.set(0, GUIDE_HOME.yaw, 0);
+}
+
 function button(label, action, tone = '#29445a', width = 0.32, height = 0.1) {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
@@ -62,39 +69,56 @@ function promptPlate() {
   return mesh;
 }
 
-export function createVrLessonControls(camera, actions) {
+export function createVrLessonControls(scene, actions) {
   const panel = new THREE.Group();
-  panel.position.set(-0.54, -0.42, -1.2);
-  camera.add(panel);
+  panel.name = 'world-anchored-lesson-guide';
+  resetGuidePose(panel);
+  scene.add(panel);
+  const lesson = new THREE.Group();
+  panel.add(lesson);
+  const grip = button('GRAB GUIDE', null, '#524d83', 0.35, 0.085);
+  grip.position.set(0, 0.37, 0.012);
+  lesson.add(grip);
   const prompt = promptPlate();
-  panel.add(prompt);
+  lesson.add(prompt);
   const repeat = button('Repeat', actions.repeat, '#29445a', 0.28, 0.085);
   const next = button('Next', actions.next, '#29445a', 0.28, 0.085);
   const explain = button('Explain', actions.explain, '#29445a', 0.28, 0.085);
   [repeat, next, explain].forEach((mesh, i) => {
     mesh.position.set((i - 1) * 0.31, -0.23, 0.003);
-    panel.add(mesh);
+    lesson.add(mesh);
   });
   const choices = Array.from({ length: 4 }, (_, i) => {
     const mesh = button('', () => {}, '#365963', 0.215, 0.085);
     mesh.position.set((i - 1.5) * 0.235, -0.34, 0.003);
-    panel.add(mesh);
+    lesson.add(mesh);
     return mesh;
   });
   const distance = button('Distance', actions.distance, '#365963', 0.28, 0.085);
   distance.position.set(-0.31, -0.45, 0.003);
-  panel.add(distance);
+  lesson.add(distance);
   panel.visible = false;
+  const panelInteraction = {
+    mesh: grip, object: panel, rotateWithController: true,
+    enabled: () => panel.visible,
+    constrain: () => {
+      panel.position.x = THREE.MathUtils.clamp(panel.position.x, -2.4, 2.6);
+      panel.position.y = THREE.MathUtils.clamp(panel.position.y, 0.8, 2.25);
+      panel.position.z = THREE.MathUtils.clamp(panel.position.z, -3.2, -0.3);
+      panel.rotation.x = 0;
+      panel.rotation.z = 0;
+    },
+  };
   function setState(view) {
     prompt.userData.setText(view.mode === 'free' ? 'FREE EXPLORATION' : view.title, view.vrMessage);
     repeat.visible = view.mode === 'guided';
     next.visible = view.mode === 'guided';
     explain.userData.setLabel(view.explained ? 'Hide help' : 'Explain');
     distance.userData.setLabel(view.showDistance ? 'Hide distance' : 'Distance');
-    distance.visible = view.mode === 'guided';
+    distance.visible = view.mode === 'guided' && !view.isOrigin;
     if (view.mode === 'free') {
       choices.forEach((mesh, i) => {
-        mesh.visible = true;
+        mesh.visible = !view.isOrigin;
         mesh.userData.setLabel(i === 3
           ? (view.showDistance ? 'Distance ✓' : 'Distance')
           : (view.freeShells[i] ? 'Sphere ' + (i + 1) + ' ✓' : 'Sphere ' + (i + 1)));
@@ -115,32 +139,37 @@ export function createVrLessonControls(camera, actions) {
     }
   }
   return {
+    panel, grip, interactables: [panelInteraction],
     buttons: [repeat, next, explain, ...choices, distance],
-    setVisible: (value) => { panel.visible = value; },
+    setWorldVisible: (value) => { panel.visible = value; },
+    setVisible: (value) => { lesson.visible = value; },
+    resetPosition: () => resetGuidePose(panel),
     setState,
   };
 }
 
-export function createVrControls(camera, { recenter, resetLab, switchStation, switchMode, exit }) {
-  // Head-relative and peripheral: these remain accessible after locomotion.
+export function createVrControls(parent, { recenter, resetLab, resetPanelPosition, switchStation, switchInvestigation, switchMode, exit }) {
+  // Session controls share the stationary guide, so no UI follows head motion.
   const panel = new THREE.Group();
-  panel.position.set(0.42, -0.22, -0.9);
-  camera.add(panel);
+  panel.position.set(0.65, -0.04, 0.003);
+  parent.add(panel);
   const buttons = [
     button('Recenter', recenter),
     button('Reset lab', resetLab),
+    button('Reset panel', resetPanelPosition),
     button('Station', switchStation),
+    button('Investigation', switchInvestigation),
     button('Mode: guided', switchMode),
     button('Exit VR', exit, '#624047'),
   ];
   buttons.forEach((mesh, i) => {
-    mesh.position.y = (2 - i) * 0.12;
+    mesh.position.y = (3 - i) * 0.12;
     panel.add(mesh);
   });
   panel.visible = false;
   return {
     buttons,
     setVisible: (visible) => { panel.visible = visible; },
-    setMode: (mode) => buttons[3].userData.setLabel(`Mode: ${mode}`),
+    setMode: (mode) => buttons[5].userData.setLabel(`Mode: ${mode}`),
   };
 }

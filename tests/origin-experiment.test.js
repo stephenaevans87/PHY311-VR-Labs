@@ -193,3 +193,27 @@ test('pinned measurements stay in place and the nearest revealed sphere is empha
   assert.ok(experiment.savedMarkers[0].position.distanceTo(localTip) < 1e-9);
   assert.equal(experiment.boundary.visible, false);
 }));
+
+test('origin investigation presents local moments and terms while the physical source and tip remain fixed', () => withCanvas(() => {
+  const experiment = createOriginExperiment(new THREE.Scene());
+  experiment.setPresentation({ shells: [false, false, false], distance: true,
+    vectors: true, boundary: true, terms: true, moments: true });
+  const charge = experiment.charge.position.clone();
+  const tip = experiment.probeTip.getWorldPosition(new THREE.Vector3());
+  const exact = experiment.readout.exactPotential;
+  const oldQ1 = experiment.readout.moments[1];
+  experiment.origin.position.y -= 0.2;
+  experiment.interactables[0].onMove();
+  assert.ok(experiment.charge.position.equals(charge));
+  assert.ok(experiment.probeTip.getWorldPosition(new THREE.Vector3()).equals(tip));
+  assert.equal(experiment.readout.exactPotential, exact);
+  assert.notEqual(experiment.readout.moments[1], oldQ1);
+  assert.equal(experiment.momentMeter.visible, true);
+  assert.equal(experiment.termMeter.visible, true);
+  assert.equal(experiment.boundary.visible, true);
+  experiment.origin.position.y = charge.y + 0.02;
+  experiment.interactables[0].constrain();
+  assert.equal(experiment.origin.position.y, charge.y);
+  experiment.interactables[0].onMove();
+  assert.deepEqual(experiment.readout.moments.slice(1), [0, 0, 0]);
+}));

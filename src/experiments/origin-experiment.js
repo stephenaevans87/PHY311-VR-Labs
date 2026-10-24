@@ -169,6 +169,10 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
   const axisRail = line(0x718a97, 0.45);
   setLine(axisRail, new THREE.Vector3(0, 0.04, 0), new THREE.Vector3(0, 1.84, 0));
   root.add(axisRail);
+  const axisLabel = plate(0.20, 0.09, '#d4c7ff');
+  axisLabel.position.set(0.17, 1.82, 0.06);
+  axisLabel.userData.draw(['+z']);
+  root.add(axisLabel);
 
   const charge = ball(0.14, COLORS.source);
   charge.position.copy(SOURCE);
@@ -260,6 +264,9 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
   const termMeter = plate(1.05, 0.53, '#a0f3df');
   termMeter.position.set(1.44, 1.10, 0.31);
   root.add(termMeter);
+  const momentMeter = plate(0.82, 0.42, '#d4c7ff');
+  momentMeter.position.set(-0.73, 1.00, 0.28);
+  root.add(momentMeter);
 
   // One small camera-relative cue replaces the large world backdrop. In free
   // mode it disappears. The two prediction choices are optional UI controls.
@@ -354,6 +361,7 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
     boundary.scale.setScalar(Math.max(result.sourceRadius, 0.001));
     boundary.visible = result.sourceRadius > 0.025
       && (!instructionalPresentation || instructionalPresentation.boundary);
+    axisLabel.visible = Boolean(instructionalPresentation?.moments);
     const toSource = charge.position.clone().sub(origin.position);
     const toProbe = tipPosition.clone().sub(origin.position);
     const showVectors = selected !== null
@@ -386,14 +394,18 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
     exactMeter.position.copy(tipPosition).add(new THREE.Vector3(0.20, 0.19, 0.08));
     exactMeter.userData.draw(['EXACT POTENTIAL', exact], '#a0f3df');
     handleMeter.userData.draw(['EXACT', exact], '#a0f3df');
-    termMeter.visible = mathRevealed && (!instructionalPresentation || instructionalPresentation.terms);
-    if (termMeter.visible) {
-      if (selected === 'origin') {
-        termMeter.userData.draw(['Qn = q(z′)ⁿ',
-          'Q0 = 1 nC',
-          `Q1 = ${(result.moments[1] / NANOCOULOMB).toFixed(2)} nC·m`,
-          `Q2 = ${(result.moments[2] / NANOCOULOMB).toFixed(2)} nC·m²`], '#d4c7ff');
-      } else drawTerms(termMeter, result);
+    const originInvestigation = Boolean(instructionalPresentation?.moments);
+    termMeter.visible = originInvestigation || (mathRevealed && (!instructionalPresentation || instructionalPresentation.terms));
+    momentMeter.visible = originInvestigation;
+    if (termMeter.visible) drawTerms(termMeter, result);
+    if (momentMeter.visible) {
+      momentMeter.userData.draw([
+        `O: z′ ${result.sourceVector.y >= 0 ? '+' : ''}${result.sourceVector.y.toFixed(2)} m`,
+        `Q₀ ${(result.moments[0] / NANOCOULOMB).toFixed(3)} nC`,
+        `Q₁ ${(result.moments[1] / NANOCOULOMB).toFixed(3)} nC·m`,
+        `Q₂ ${(result.moments[2] / NANOCOULOMB).toFixed(3)} nC·m²`,
+        `Q₃ ${(result.moments[3] / NANOCOULOMB).toFixed(3)} nC·m³`,
+      ], '#d4c7ff');
     }
     refreshCue(result);
     onStateChange({
@@ -436,6 +448,7 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
       origin.position.x = SOURCE.x;
       origin.position.z = SOURCE.z;
       origin.position.y = THREE.MathUtils.clamp(origin.position.y, 0.79, 1.87);
+      if (Math.abs(origin.position.y - SOURCE.y) < 0.035) origin.position.y = SOURCE.y;
     },
     onHover: (hovered) => hovered ? select('origin') : clearSelection('origin'),
     onGrab: () => { setGrab(mesh, true); select('origin'); },
@@ -464,7 +477,7 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
   ];
   reset();
   return {
-    root, charge, origin, probe, probeHandle, probeTip, equipotentials, boundary,
+    root, charge, origin, probe, probeHandle, probeTip, equipotentials, boundary, momentMeter, termMeter,
     sourceVector, observationVector, physicalDistanceLine, savedMarkers,
     interactables, buttons: [sameButton, changesButton], update, reset, recordPrediction,
     attachHud(camera) { camera.add(hud); },
@@ -483,7 +496,7 @@ export function createOriginExperiment(scene, { position = new THREE.Vector3(0, 
     get mathRevealed() { return mathRevealed; },
     faceLabels(camera) {
       camera.getWorldQuaternion(quat);
-      [plus, exactMeter, termMeter, physicalDistanceLabel, sourceVectorLabel, observationVectorLabel,
+      [plus, exactMeter, termMeter, momentMeter, axisLabel, physicalDistanceLabel, sourceVectorLabel, observationVectorLabel,
         ...savedMarkers.map((marker) => marker.userData.label),
         ...equipotentials.map((patch) => patch.userData.valueLabel)]
         .forEach((mesh) => mesh.quaternion.copy(quat));
